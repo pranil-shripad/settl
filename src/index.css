@@ -1,0 +1,91 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---- Theme tokens ---- */
+:root,
+[data-theme="light"] {
+  --bg: #faf6f2;
+  --surface: 255 255 255;
+  --surface-2: 244 239 233;
+  --overlay: 28 22 20;
+
+  --ink-50: 244 239 233;
+  --ink-100: 232 223 214;
+  --ink-200: 216 203 189;
+  --ink-300: 189 173 156;
+  --ink-400: 139 124 108;
+  --ink-500: 107 93 80;
+  --ink-600: 74 62 51;
+  --ink-700: 52 42 34;
+  --ink-800: 42 36 32;
+  --ink-900: 30 25 22;
+  --ink-950: 18 14 12;
+}
+
+[data-theme="dark"] {
+  --bg: #1c1614;
+  --surface: 42 33 29;
+  --surface-2: 53 43 38;
+  --overlay: 0 0 0;
+
+  --ink-50: 61 50 44;
+  --ink-100: 53 43 38;
+  --ink-200: 61 50 44;
+  --ink-300: 89 75 67;
+  --ink-400: 120 104 94;
+  --ink-500: 159 143 131;
+  --ink-600: 189 173 156;
+  --ink-700: 210 196 182;
+  --ink-800: 232 221 209;
+  --ink-900: 242 234 228;
+  --ink-950: 250 246 242;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    background-color: var(--bg);
+    @apply text-ink-800 font-sans antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  button {
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-2xl bg-surface shadow-card ring-1 ring-ink-200/60;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl font-semibold transition-all duration-150 active:scale-[0.97] disabled:opacity-50 disabled:pointer-events-none;
+  }
+  .btn-primary {
+    @apply btn bg-brand-700 text-white hover:bg-brand-800 shadow-sm;
+  }
+  .btn-ghost {
+    @apply btn bg-transparent text-ink-600 hover:bg-ink-100;
+  }
+  .btn-soft {
+    @apply btn bg-brand-500/15 text-brand-700 hover:bg-brand-500/25 ring-1 ring-brand-500/30;
+  }
+  .input {
+    @apply w-full rounded-xl border-0 bg-surface-subtle px-4 py-3 text-ink-900 placeholder-ink-400 ring-1 ring-inset ring-ink-200 focus:ring-2 focus:ring-brand-500 focus:bg-surface transition;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full bg-brand-500/15 px-3 py-1.5 text-sm font-semibold text-brand-700 ring-1 ring-brand-500/30;
+  }
+}
+
+/* hide scrollbars on horizontal tab strip */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
