@@ -24,20 +24,58 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchProfile = async (uid: string) => {
-    const { data } = await supabase
-      .from("profiles")
-      .select("id, email, display_name")
-      .eq("id", uid)
-      .maybeSingle();
-    setProfile(data as Profile | null);
+  const fetchProfile = async (uid: string, userEmail?: string) => {
+    try {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id, email, display_name")
+        .eq("id", uid)
+        .maybeSingle();
+
+      // If token is invalid/expired or RLS denied (42501/PGRST301/JWT error), clear stale session
+      if (error && (error.code === "42501" || error.code === "PGRST301" || error.message?.toLowerCase().includes("jwt") || error.message?.toLowerCase().includes("forbidden"))) {
+        await supabase.auth.signOut();
+        setSession(null);
+        setProfile(null);
+        return;
+      }
+
+      if (data) {
+        setProfile(data as Profile);
+        return;
+      }
+
+      // Fallback: If profile row doesn't exist yet in public.profiles, create it
+      if (!data && userEmail) {
+        const { data: created, error: createErr } = await supabase
+          .from("profiles")
+          .upsert({ id: uid, email: userEmail }, { onConflict: "id" })
+          .select("id, email, display_name")
+          .maybeSingle();
+
+        if (createErr && (createErr.code === "42501" || createErr.code === "PGRST301" || createErr.message?.toLowerCase().includes("jwt"))) {
+          await supabase.auth.signOut();
+          setSession(null);
+          setProfile(null);
+          return;
+        }
+
+        if (created) {
+          setProfile(created as Profile);
+          return;
+        }
+      }
+      setProfile(null);
+    } catch {
+      setProfile(null);
+    }
   };
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
       if (data.session?.user) {
-        fetchProfile(data.session.user.id).finally(() => setLoading(false));
+        fetchProfile(data.session.user.id, data.session.user.email).finally(() => setLoading(false));
       } else {
         setLoading(false);
       }
@@ -47,7 +85,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       (async () => {
         setSession(sess);
         if (sess?.user) {
-          await fetchProfile(sess.user.id);
+          await fetchProfile(sess.user.id, sess.user.email);
         } else {
           setProfile(null);
         }
@@ -59,7 +97,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const refreshProfile = async () => {
-    if (session?.user) await fetchProfile(session.user.id);
+    if (session?.user) await fetchProfile(session.user.id, session.user.email);
   };
 
   const signOut = async () => {

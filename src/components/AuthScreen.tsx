@@ -8,7 +8,7 @@ export function AuthScreen() {
   const { refreshProfile } = useAuth();
   const [step, setStep] = useState<Step>("email");
   const [email, setEmail] = useState("");
-  const [otp, setOtp] = useState(["", "", "", "", "", ""]);
+  const [otp, setOtp] = useState<string[]>(Array(6).fill(""));
   const [displayName, setDisplayName] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -30,7 +30,10 @@ export function AuthScreen() {
     setLoading(true);
     const { error } = await supabase.auth.signInWithOtp({
       email: email.trim(),
-      options: { shouldCreateUser: true },
+      options: {
+        shouldCreateUser: true,
+        emailRedirectTo: window.location.origin,
+      },
     });
     setLoading(false);
     if (error) {
@@ -43,35 +46,42 @@ export function AuthScreen() {
 
   const verify = async () => {
     setError(null);
-    const code = otp.join("");
+    const code = otp.join("").trim();
     if (code.length !== 6) {
       setError("Enter the 6-digit code");
       return;
     }
     setLoading(true);
-    const { data, error } = await supabase.auth.verifyOtp({
-      email: email.trim(),
+    const cleanEmail = email.trim();
+
+    // Attempt verification with 'email' type first (for existing users), fallback to 'signup' (for new users)
+    let { error } = await supabase.auth.verifyOtp({
+      email: cleanEmail,
       token: code,
       type: "email",
     });
-    setLoading(false);
+
     if (error) {
-      setError(error.message);
-      return;
-    }
-    // Check if profile has a display name
-    if (data.user) {
-      const { data: prof } = await supabase
-        .from("profiles")
-        .select("display_name")
-        .eq("id", data.user.id)
-        .maybeSingle();
-      if (prof && !prof.display_name) {
-        setStep("onboarding");
-      } else {
-        await refreshProfile();
+      const signupRes = await supabase.auth.verifyOtp({
+        email: cleanEmail,
+        token: code,
+        type: "signup",
+      });
+      if (!signupRes.error) {
+        error = null;
       }
     }
+
+    setLoading(false);
+    if (error) {
+      if (error.message.toLowerCase().includes("invalid") || error.message.toLowerCase().includes("expired")) {
+        setError("Invalid or expired 6-digit code. Please check the code sent to your email and try again.");
+      } else {
+        setError(error.message);
+      }
+      return;
+    }
+    await refreshProfile();
   };
 
   const completeOnboarding = async () => {
@@ -111,7 +121,7 @@ export function AuthScreen() {
     e.preventDefault();
     const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
     if (pasted.length > 0) {
-      const next = pasted.split("").concat(Array(6 - pasted.length).fill(""));
+      const next = pasted.split("").concat(Array(6 - pasted.length).fill("")).slice(0, 6);
       setOtp(next);
       otpRefs.current[Math.min(pasted.length, 5)]?.focus();
     }
@@ -181,15 +191,15 @@ export function AuthScreen() {
                 onClick={() => {
                   setStep("email");
                   setError(null);
-                  setOtp(["", "", "", "", "", ""]);
+                  setOtp(Array(6).fill(""));
                 }}
               >
                 ← Back
               </button>
-              <h1 className="text-2xl font-extrabold text-ink-900">Check your email</h1>
+              <h1 className="text-2xl font-extrabold text-ink-900">Enter verification code</h1>
               <p className="mt-1.5 text-sm text-ink-500">
                 We sent a 6-digit code to{" "}
-                <span className="font-semibold text-ink-700">{email}</span>.
+                <span className="font-semibold text-ink-700">{email}</span>. Enter the code below to sign in.
               </p>
               <div className="mt-5 space-y-4">
                 <div
