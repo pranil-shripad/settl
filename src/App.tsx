@@ -8,6 +8,7 @@ import { ExpenseFeed } from "./components/ExpenseFeed";
 import { SettleUpView } from "./components/SettleUpView";
 import { RemindersPanel } from "./components/RemindersPanel";
 import { ToastProvider } from "./components/Toast";
+import { supabase } from "./supabase";
 import {
   fetchExpenses,
   fetchExpenseHistory,
@@ -26,8 +27,8 @@ function AppInner() {
   const [paid, setPaid] = useState<Settlement[]>([]);
   const [groupLoading, setGroupLoading] = useState(false);
 
-  const loadGroupData = useCallback(async (group: Group) => {
-    setGroupLoading(true);
+  const loadGroupData = useCallback(async (group: Group, isInitialLoad = false) => {
+    if (isInitialLoad) setGroupLoading(true);
     try {
       const [membs, exps] = await Promise.all([
         fetchGroupMembers(group.id),
@@ -56,12 +57,46 @@ function AppInner() {
       }));
       setExpenses(enriched);
     } finally {
-      setGroupLoading(false);
+      if (isInitialLoad) setGroupLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    if (currentGroup) loadGroupData(currentGroup);
+    if (!currentGroup) return;
+    loadGroupData(currentGroup, true);
+
+    // Subscribe to Realtime WebSocket updates for expenses and group_members
+    const channel = supabase
+      .channel(`group-realtime-${currentGroup.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "expenses",
+          filter: `group_id=eq.${currentGroup.id}`,
+        },
+        () => {
+          loadGroupData(currentGroup, false);
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "group_members",
+          filter: `group_id=eq.${currentGroup.id}`,
+        },
+        () => {
+          loadGroupData(currentGroup, false);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [currentGroup, loadGroupData]);
 
   if (loading) {
@@ -108,6 +143,7 @@ function AppInner() {
         active={tab}
         onChange={setTab}
         onLeave={() => setCurrentGroup(null)}
+        onMemberAdded={() => loadGroupData(currentGroup, false)}
         badge={{ expenses: disputedCount || undefined }}
       />
       <main className="mx-auto max-w-3xl px-4 py-5 sm:px-6 sm:py-6">
@@ -117,6 +153,7 @@ function AppInner() {
           <>
             {tab === "expenses" && (
               <ExpenseFeed
+                groupId={currentGroup.id}
                 members={members}
                 profiles={profiles}
                 expenses={expenses}

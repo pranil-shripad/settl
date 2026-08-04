@@ -51,16 +51,46 @@ export async function updateDisplayName(
 }
 
 export async function fetchUserGroups(): Promise<Group[]> {
-  try {
-    await supabase.rpc("activate_my_memberships");
-  } catch {
-    // ignore if RPC doesn't exist yet
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return [];
+
+  // Automatically activate pending memberships for the logged in user
+  if (user.email) {
+    try {
+      await supabase
+        .from("group_members")
+        .update({
+          status: "active",
+          profile_id: user.id,
+          joined_at: new Date().toISOString(),
+        })
+        .ilike("email", user.email.trim())
+        .or("status.eq.pending,profile_id.is.null");
+    } catch {
+      // Ignore fallback error
+    }
   }
 
-  const { data, error } = await supabase
+  // Find all groups where the user is creator OR listed in group_members by profile_id or email
+  const { data: memberRows } = await supabase
+    .from("group_members")
+    .select("group_id")
+    .or(`profile_id.eq.${user.id},email.ilike.${user.email}`);
+
+  const groupIds = Array.from(new Set((memberRows ?? []).map((m) => m.group_id)));
+
+  let query = supabase
     .from("groups")
     .select("id, name, created_by, created_at")
     .order("created_at", { ascending: false });
+
+  if (groupIds.length > 0) {
+    query = query.or(`created_by.eq.${user.id},id.in.(${groupIds.join(",")})`);
+  } else {
+    query = query.eq("created_by", user.id);
+  }
+
+  const { data, error } = await query;
   if (error) throw error;
   return (data ?? []) as Group[];
 }

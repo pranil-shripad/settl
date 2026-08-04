@@ -6,12 +6,14 @@ import { addExpense as dbAddExpense } from "../data";
 import { useToast } from "./Toast";
 
 export function AddExpenseModal({
+  groupId,
   members,
   profiles,
   currentUserId,
   onClose,
   onAdd,
 }: {
+  groupId: string;
   members: GroupMember[];
   profiles: Map<string, Profile>;
   currentUserId: string;
@@ -71,7 +73,7 @@ export function AddExpenseModal({
           splits[id] = parseFloat(customSplits[id] ?? "0") || 0;
         }
       }
-      const created = await dbAddExpense("", {
+      const created = await dbAddExpense(groupId, {
         description: description.trim(),
         amount: round2(numericAmount),
         paid_by: paidBy,

@@ -5,6 +5,7 @@ import { AddExpenseModal } from "./AddExpenseModal";
 import { formatMoney } from "../settlement";
 
 export function ExpenseFeed({
+  groupId,
   expenses,
   members,
   profiles,
@@ -13,6 +14,7 @@ export function ExpenseFeed({
   onConfirm,
   onDispute,
 }: {
+  groupId: string;
   expenses: Expense[];
   members: GroupMember[];
   profiles: Map<string, Profile>;
@@ -78,6 +80,7 @@ export function ExpenseFeed({
 
       {modalOpen && (
         <AddExpenseModal
+          groupId={groupId}
           members={members}
           profiles={profiles}
           currentUserId={currentUserId}

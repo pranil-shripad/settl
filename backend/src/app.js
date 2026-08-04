@@ -30,9 +30,9 @@ app.use(
 app.use("/", healthRoutes);
 
 // API routes
-app.use("/groups", groupRoutes);
 app.use("/", expenseRoutes);
 app.use("/", settlementRoutes);
+app.use("/groups", groupRoutes);
 
 // 404 handler
 app.use((req, res) => {
