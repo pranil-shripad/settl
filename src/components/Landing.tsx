@@ -15,7 +15,7 @@ export function Landing({
 }: {
   onOpenGroup: (group: Group) => void;
 }) {
-  const { profile, user } = useAuth();
+  const { profile, user, signOut } = useAuth();
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -54,13 +54,24 @@ export function Landing({
             </span>
           </div>
           {profile && (
-            <div className="flex items-center gap-2">
-              <Avatar
-                name={profile.display_name ?? profile.email}
-                id={profile.id}
-                size="md"
-              />
-              <span className="text-sm font-bold text-ink-700">{profile.display_name ?? profile.email}</span>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                <Avatar
+                  name={profile.display_name ?? profile.email}
+                  id={profile.id}
+                  size="md"
+                />
+                <span className="hidden text-sm font-bold text-ink-700 sm:inline">
+                  {profile.display_name ?? profile.email}
+                </span>
+              </div>
+              <button
+                onClick={() => signOut()}
+                className="btn-soft px-3 py-1.5 text-xs font-bold text-ink-600 hover:text-ink-900"
+                title="Log out"
+              >
+                Log out
+              </button>
             </div>
           )}
         </header>

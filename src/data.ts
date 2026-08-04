@@ -51,6 +51,12 @@ export async function updateDisplayName(
 }
 
 export async function fetchUserGroups(): Promise<Group[]> {
+  try {
+    await supabase.rpc("activate_my_memberships");
+  } catch {
+    // ignore if RPC doesn't exist yet
+  }
+
   const { data, error } = await supabase
     .from("groups")
     .select("id, name, created_by, created_at")

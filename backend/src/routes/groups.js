@@ -95,11 +95,11 @@ router.post("/:id/invite", requireAuth, requireGroupMember, async (req, res) => 
 
     const cleanEmail = email.trim().toLowerCase();
 
-    // Check if user with this email already has a profile in profiles table
+    // Check if user with this email already has a profile in profiles table (case-insensitive)
     const { data: existingProfile } = await supabase
       .from("profiles")
       .select("id")
-      .eq("email", cleanEmail)
+      .ilike("email", cleanEmail)
       .maybeSingle();
 
     const profileId = existingProfile?.id || null;

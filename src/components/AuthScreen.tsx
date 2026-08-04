@@ -5,8 +5,12 @@ import { useAuth } from "../auth";
 type Step = "email" | "otp" | "onboarding";
 
 export function AuthScreen() {
-  const { refreshProfile } = useAuth();
-  const [step, setStep] = useState<Step>("email");
+  const { session, profile, refreshProfile } = useAuth();
+  const [step, setStep] = useState<Step>(() => {
+    // If already logged in but no display name, start at onboarding
+    if (session && profile && !profile.display_name) return "onboarding";
+    return "email";
+  });
   const [email, setEmail] = useState("");
   const [otp, setOtp] = useState<string[]>(Array(6).fill(""));
   const [displayName, setDisplayName] = useState("");
@@ -14,6 +18,8 @@ export function AuthScreen() {
   const [error, setError] = useState<string | null>(null);
   const [cooldown, setCooldown] = useState(0);
   const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const sendingRef = useRef(false);
+  const verifyingRef = useRef(false);
 
   useEffect(() => {
     if (cooldown <= 0) return;
@@ -21,10 +27,21 @@ export function AuthScreen() {
     return () => clearInterval(t);
   }, [cooldown]);
 
+  // Transition to onboarding when logged in but missing display name
+  useEffect(() => {
+    if (session && profile && !profile.display_name) {
+      setStep("onboarding");
+    }
+  }, [session, profile]);
+
   const sendCode = async () => {
+    if (sendingRef.current) return;
+    sendingRef.current = true;
+
     setError(null);
     if (!email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
       setError("Enter a valid email address");
+      sendingRef.current = false;
       return;
     }
     setLoading(true);
@@ -36,6 +53,7 @@ export function AuthScreen() {
       },
     });
     setLoading(false);
+    sendingRef.current = false;
     if (error) {
       setError(error.message);
       return;
@@ -45,40 +63,30 @@ export function AuthScreen() {
   };
 
   const verify = async () => {
+    if (verifyingRef.current) return;
+    verifyingRef.current = true;
+
     setError(null);
     const code = otp.join("").trim();
     if (code.length !== 6) {
       setError("Enter the 6-digit code");
+      verifyingRef.current = false;
       return;
     }
     setLoading(true);
     const cleanEmail = email.trim();
 
-    // Attempt verification with 'email' type first (for existing users), fallback to 'signup' (for new users)
-    let { error } = await supabase.auth.verifyOtp({
+    const { error } = await supabase.auth.verifyOtp({
       email: cleanEmail,
       token: code,
-      type: "email",
+      type: "magiclink",
     });
 
-    if (error) {
-      const signupRes = await supabase.auth.verifyOtp({
-        email: cleanEmail,
-        token: code,
-        type: "signup",
-      });
-      if (!signupRes.error) {
-        error = null;
-      }
-    }
-
     setLoading(false);
+    verifyingRef.current = false;
+
     if (error) {
-      if (error.message.toLowerCase().includes("invalid") || error.message.toLowerCase().includes("expired")) {
-        setError("Invalid or expired 6-digit code. Please check the code sent to your email and try again.");
-      } else {
-        setError(error.message);
-      }
+      setError(error.message);
       return;
     }
     await refreshProfile();

@@ -26,53 +26,54 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const fetchProfile = async (uid: string, userEmail?: string) => {
     try {
+      console.log("[AUTH] fetchProfile called for uid:", uid);
       const { data, error } = await supabase
         .from("profiles")
         .select("id, email, display_name")
         .eq("id", uid)
         .maybeSingle();
 
-      // If token is invalid/expired or RLS denied (42501/PGRST301/JWT error), clear stale session
-      if (error && (error.code === "42501" || error.code === "PGRST301" || error.message?.toLowerCase().includes("jwt") || error.message?.toLowerCase().includes("forbidden"))) {
-        await supabase.auth.signOut();
-        setSession(null);
-        setProfile(null);
-        return;
-      }
+      console.log("[AUTH] fetchProfile result:", { data, error: error?.message || null, errorCode: error?.code || null });
 
-      if (data) {
-        setProfile(data as Profile);
-        return;
-      }
-
-      // Fallback: If profile row doesn't exist yet in public.profiles, create it
-      if (!data && userEmail) {
-        const { data: created, error: createErr } = await supabase
-          .from("profiles")
-          .upsert({ id: uid, email: userEmail }, { onConflict: "id" })
-          .select("id, email, display_name")
-          .maybeSingle();
-
-        if (createErr && (createErr.code === "42501" || createErr.code === "PGRST301" || createErr.message?.toLowerCase().includes("jwt"))) {
+      if (error) {
+        // Only sign out on JWT/auth errors, NOT on missing table or RLS issues
+        const msg = error.message?.toLowerCase() || "";
+        if (msg.includes("jwt") || error.code === "PGRST301") {
+          console.log("[AUTH] JWT error — signing out");
           await supabase.auth.signOut();
           setSession(null);
           setProfile(null);
           return;
         }
-
-        if (created) {
-          setProfile(created as Profile);
-          return;
-        }
+        // For other errors (RLS, missing table, etc.), fall through to
+        // create a temporary profile from session data
+        console.log("[AUTH] Non-JWT error, creating temporary profile");
       }
+
+      if (data) {
+        console.log("[AUTH] Profile found:", data);
+        setProfile(data as Profile);
+        return;
+      }
+
+      // Profile row doesn't exist yet — build a temporary profile from the
+      // session data so the UI can proceed to the onboarding step.
+      if (userEmail) {
+        console.log("[AUTH] No profile row — using temporary profile");
+        setProfile({ id: uid, email: userEmail, display_name: null });
+        return;
+      }
+
       setProfile(null);
-    } catch {
+    } catch (e) {
+      console.log("[AUTH] fetchProfile exception:", e);
       setProfile(null);
     }
   };
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
+      console.log("[AUTH] getSession:", { hasSession: !!data.session, userId: data.session?.user?.id });
       setSession(data.session);
       if (data.session?.user) {
         fetchProfile(data.session.user.id, data.session.user.email).finally(() => setLoading(false));
@@ -82,6 +83,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
 
     const { data: sub } = supabase.auth.onAuthStateChange((_event, sess) => {
+      console.log("[AUTH] onAuthStateChange:", { event: _event, hasSession: !!sess, userId: sess?.user?.id });
       (async () => {
         setSession(sess);
         if (sess?.user) {
@@ -97,7 +99,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const refreshProfile = async () => {
-    if (session?.user) await fetchProfile(session.user.id, session.user.email);
+    console.log("[AUTH] refreshProfile called");
+    const { data: { session: currentSession } } = await supabase.auth.getSession();
+    console.log("[AUTH] refreshProfile getSession:", { hasSession: !!currentSession, userId: currentSession?.user?.id });
+    if (currentSession?.user) {
+      setSession(currentSession);
+      await fetchProfile(currentSession.user.id, currentSession.user.email);
+    } else {
+      console.log("[AUTH] refreshProfile — no session found");
+    }
   };
 
   const signOut = async () => {
