@@ -11,8 +11,9 @@ FROM nginx:alpine
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-# Grant read/write permissions for OpenShift arbitrary non-root UID
-RUN chmod -R 777 /var/cache/nginx /var/log/nginx /var/run /tmp /usr/share/nginx/html
+# Configure main nginx pid to /tmp and grant full permissions for arbitrary non-root UID
+RUN sed -i 's|/var/run/nginx.pid|/tmp/nginx.pid|g' /etc/nginx/nginx.conf && \
+    chmod -R 777 /var/cache/nginx /var/log/nginx /var/run /tmp /usr/share/nginx/html
 
 EXPOSE 8080
 CMD ["nginx", "-g", "daemon off;"]
