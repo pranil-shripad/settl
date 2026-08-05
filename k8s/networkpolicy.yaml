@@ -1,0 +1,19 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: settl-backend-netpol
+spec:
+  podSelector:
+    matchLabels:
+      app: settl-backend
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: settl-frontend
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 3000

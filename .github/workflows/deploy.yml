@@ -1,0 +1,36 @@
+name: Build and Deploy Settl
+on:
+  push:
+    branches: [main]
+jobs:
+  build-push-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to Quay
+        run: echo "${{ secrets.QUAY_PASSWORD }}" | docker login quay.io -u "${{ secrets.QUAY_USERNAME }}" --password-stdin
+
+      - name: Build and push frontend image
+        run: |
+          docker build -t quay.io/${{ secrets.QUAY_USERNAME }}/settl-frontend:${{ github.sha }} -f Dockerfile .
+          docker push quay.io/${{ secrets.QUAY_USERNAME }}/settl-frontend:${{ github.sha }}
+
+      - name: Build and push backend image
+        run: |
+          docker build -t quay.io/${{ secrets.QUAY_USERNAME }}/settl-backend:${{ github.sha }} -f backend/Dockerfile backend
+          docker push quay.io/${{ secrets.QUAY_USERNAME }}/settl-backend:${{ github.sha }}
+
+      - name: Install oc CLI
+        run: |
+          curl -LO https://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable/openshift-client-linux.tar.gz
+          tar -xzf openshift-client-linux.tar.gz
+          sudo mv oc /usr/local/bin/
+
+      - name: Deploy both services to OpenShift
+        run: |
+          oc login --token=${{ secrets.OC_TOKEN }} --server=${{ secrets.OC_SERVER }}
+          oc set image deployment/settl-frontend frontend=quay.io/${{ secrets.QUAY_USERNAME }}/settl-frontend:${{ github.sha }} -n pranil-shripad-dev
+          oc set image deployment/settl-backend backend=quay.io/${{ secrets.QUAY_USERNAME }}/settl-backend:${{ github.sha }} -n pranil-shripad-dev
+          oc rollout status deployment/settl-frontend -n pranil-shripad-dev
+          oc rollout status deployment/settl-backend -n pranil-shripad-dev

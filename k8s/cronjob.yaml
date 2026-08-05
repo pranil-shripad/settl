@@ -1,0 +1,18 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: settl-reminder-job
+spec:
+  schedule: "0 */6 * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: reminder-job
+              image: quay.io/pranil-shripad/settl-backend:v1
+              command: ["npm", "run", "reminder"]
+              envFrom:
+                - secretRef:
+                    name: settl-secrets
+          restartPolicy: OnFailure
