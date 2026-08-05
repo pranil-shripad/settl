@@ -1,8 +1,22 @@
 import { supabase } from "./supabase";
 import type { Expense, Group, GroupMember, Profile, Settlement } from "./types";
 
-const defaultHost = typeof window !== "undefined" && window.location.hostname ? window.location.hostname : "localhost";
-const API_BASE_URL = import.meta.env.VITE_API_URL || `http://${defaultHost}:3000`;
+function getApiBaseUrl(): string {
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL;
+  }
+  if (typeof window !== "undefined" && window.location.hostname) {
+    const host = window.location.hostname;
+    if (host.includes("settl-frontend-route-")) {
+      const protocol = window.location.protocol === "https:" ? "https:" : "http:";
+      return `${protocol}//${host.replace("settl-frontend-route-", "settl-backend-route-")}`;
+    }
+    return `http://${host}:3000`;
+  }
+  return "http://localhost:3000";
+}
+
+const API_BASE_URL = getApiBaseUrl();
 
 async function getAuthHeader(): Promise<HeadersInit> {
   const { data: { session } } = await supabase.auth.getSession();
