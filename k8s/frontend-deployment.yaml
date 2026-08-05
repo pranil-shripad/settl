@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: quay.io/pranil-shripad/settl-frontend:v1
+          image: image-registry.openshift-image-registry.svc:5000/pranil-shripad-dev/settl-frontend@sha256:ae85d86db95e1a855ee76cef3f6c1d2bf48006fa8b6a5f38b65e829c285347b0
           ports:
             - containerPort: 8080
           resources:
@@ -41,7 +41,8 @@ spec:
   selector:
     app: settl-frontend
   ports:
-    - port: 80
+    - name: http
+      port: 80
       targetPort: 8080
 ---
 apiVersion: route.openshift.io/v1
@@ -53,7 +54,7 @@ spec:
     kind: Service
     name: settl-frontend-svc
   port:
-    targetPort: 80
+    targetPort: http
   tls:
     termination: edge
     insecureEdgeTerminationPolicy: Redirect

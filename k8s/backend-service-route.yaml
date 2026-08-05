@@ -6,7 +6,8 @@ spec:
   selector:
     app: settl-backend
   ports:
-    - port: 80
+    - name: http
+      port: 80
       targetPort: 3000
 ---
 apiVersion: route.openshift.io/v1
@@ -18,7 +19,7 @@ spec:
     kind: Service
     name: settl-backend-svc
   port:
-    targetPort: 80
+    targetPort: http
   tls:
     termination: edge
     insecureEdgeTerminationPolicy: Redirect
