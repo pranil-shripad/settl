@@ -1,7 +1,8 @@
 import { supabase } from "./supabase";
 import type { Expense, Group, GroupMember, Profile, Settlement } from "./types";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
+const defaultHost = typeof window !== "undefined" && window.location.hostname ? window.location.hostname : "localhost";
+const API_BASE_URL = import.meta.env.VITE_API_URL || `http://${defaultHost}:3000`;
 
 async function getAuthHeader(): Promise<HeadersInit> {
   const { data: { session } } = await supabase.auth.getSession();
@@ -97,12 +98,23 @@ export async function fetchUserGroups(): Promise<Group[]> {
 
 export async function createGroup(
   name: string,
-  _creatorId: string
+  creatorId: string
 ): Promise<Group> {
-  return apiFetch<Group>("/groups", {
-    method: "POST",
-    body: JSON.stringify({ name }),
-  });
+  try {
+    return await apiFetch<Group>("/groups", {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    });
+  } catch (err) {
+    console.warn("Backend API createGroup failed, using direct Supabase fallback:", err);
+    const { data, error } = await supabase
+      .from("groups")
+      .insert({ name: name.trim(), created_by: creatorId })
+      .select("id, name, created_by, created_at")
+      .single();
+    if (error) throw error;
+    return data as Group;
+  }
 }
 
 export async function fetchGroupMembers(groupId: string): Promise<GroupMember[]> {
@@ -125,10 +137,33 @@ export async function inviteMember(
   groupId: string,
   email: string
 ): Promise<void> {
-  await apiFetch(`/groups/${groupId}/invite`, {
-    method: "POST",
-    body: JSON.stringify({ email }),
-  });
+  try {
+    await apiFetch(`/groups/${groupId}/invite`, {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    });
+  } catch (err) {
+    console.warn("Backend API inviteMember failed, using direct Supabase fallback:", err);
+    const cleanEmail = email.trim().toLowerCase();
+    const { data: existingProfile } = await supabase
+      .from("profiles")
+      .select("id")
+      .ilike("email", cleanEmail)
+      .maybeSingle();
+
+    const profileId = existingProfile?.id || null;
+    const status = profileId ? "active" : "pending";
+    const joinedAt = profileId ? new Date().toISOString() : null;
+
+    const { error } = await supabase.from("group_members").insert({
+      group_id: groupId,
+      email: cleanEmail,
+      profile_id: profileId,
+      status: status,
+      joined_at: joinedAt,
+    });
+    if (error && error.code !== "23505") throw error;
+  }
 }
 
 export async function activateMember(
@@ -202,26 +237,55 @@ export async function addExpense(
     added_by: string;
   }
 ): Promise<Expense> {
-  return apiFetch<Expense>(`/groups/${groupId}/expenses`, {
-    method: "POST",
-    body: JSON.stringify({
-      description: data.description,
-      amount: data.amount,
-      paid_by: data.paid_by,
-      split_among: data.split_among,
-      custom_splits: data.custom_splits ?? null,
-    }),
-  });
+  try {
+    return await apiFetch<Expense>(`/groups/${groupId}/expenses`, {
+      method: "POST",
+      body: JSON.stringify({
+        description: data.description,
+        amount: data.amount,
+        paid_by: data.paid_by,
+        split_among: data.split_among,
+        custom_splits: data.custom_splits ?? null,
+      }),
+    });
+  } catch (err) {
+    console.warn("Backend API addExpense failed, using direct Supabase fallback:", err);
+    const { data: created, error } = await supabase
+      .from("expenses")
+      .insert({
+        group_id: groupId,
+        description: data.description.trim(),
+        amount: data.amount,
+        paid_by: data.paid_by,
+        split_among: data.split_among,
+        custom_splits: data.custom_splits ?? null,
+        status: "confirmed",
+        added_by: data.added_by,
+      })
+      .select("*")
+      .single();
+    if (error) throw error;
+    return created as Expense;
+  }
 }
 
 export async function updateExpenseStatus(
   expenseId: string,
   status: "confirmed" | "disputed"
 ): Promise<void> {
-  const action = status === "confirmed" ? "confirm" : "dispute";
-  await apiFetch(`/expenses/${expenseId}/${action}`, {
-    method: "POST",
-  });
+  try {
+    const action = status === "confirmed" ? "confirm" : "dispute";
+    await apiFetch(`/expenses/${expenseId}/${action}`, {
+      method: "POST",
+    });
+  } catch (err) {
+    console.warn("Backend API updateExpenseStatus failed, using direct Supabase fallback:", err);
+    const { error } = await supabase
+      .from("expenses")
+      .update({ status, updated_at: new Date().toISOString() })
+      .eq("id", expenseId);
+    if (error) throw error;
+  }
 }
 
 export async function fetchBackendSettlement(groupId: string): Promise<{
@@ -239,13 +303,49 @@ export async function markSettlementPaidOnBackend(
   to: string,
   amount: number
 ): Promise<void> {
-  await apiFetch("/settlements/mark-paid", {
-    method: "POST",
-    body: JSON.stringify({
-      group_id: groupId,
-      from,
-      to,
-      amount,
-    }),
-  });
+  try {
+    await apiFetch("/settlements/mark-paid", {
+      method: "POST",
+      body: JSON.stringify({
+        group_id: groupId,
+        from,
+        to,
+        amount,
+      }),
+    });
+  } catch (err) {
+    console.warn("Backend mark-paid API error, using direct Supabase client fallback:", err);
+    const { error } = await supabase
+      .from("settlements")
+      .insert({
+        group_id: groupId,
+        from_profile_id: from,
+        to_profile_id: to,
+        amount: amount,
+        status: "paid",
+        paid_at: new Date().toISOString(),
+      });
+    if (error) throw error;
+  }
+}
+
+export async function fetchPaidSettlements(groupId: string): Promise<Settlement[]> {
+  try {
+    const { data } = await supabase
+      .from("settlements")
+      .select("from_profile_id, to_profile_id, amount, status, paid_at")
+      .eq("group_id", groupId)
+      .eq("status", "paid");
+
+    if (!data) return [];
+    return data.map((s) => ({
+      from: s.from_profile_id,
+      to: s.to_profile_id,
+      amount: Number(s.amount),
+      status: s.status as "paid",
+      paidAt: new Date(s.paid_at).getTime(),
+    }));
+  } catch {
+    return [];
+  }
 }

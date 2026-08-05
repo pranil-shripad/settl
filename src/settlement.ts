@@ -16,7 +16,8 @@ const EPSILON = 0.01;
  */
 export function computeBalances(
   expenses: Expense[],
-  memberIds: string[]
+  memberIds: string[],
+  paidSettlements: Settlement[] = []
 ): Balance[] {
   const balances = new Map<string, number>();
   for (const id of memberIds) balances.set(id, 0);
@@ -42,6 +43,23 @@ export function computeBalances(
     // each split member is debited their share
     for (const [id, share] of Object.entries(shares)) {
       balances.set(id, (balances.get(id) ?? 0) - share);
+    }
+  }
+
+  // Adjust for paid settlements:
+  // 'from' (debtor who paid) is credited +amount (paid off debt)
+  // 'to' (creditor who received) is debited -amount (received payment)
+  for (const s of paidSettlements) {
+    if (s.status === "paid") {
+      const amt = Number(s.amount);
+      const fromId = (s as any).from_profile_id || s.from;
+      const toId = (s as any).to_profile_id || s.to;
+      if (balances.has(fromId)) {
+        balances.set(fromId, (balances.get(fromId) ?? 0) + amt);
+      }
+      if (balances.has(toId)) {
+        balances.set(toId, (balances.get(toId) ?? 0) - amt);
+      }
     }
   }
 

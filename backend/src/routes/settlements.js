@@ -93,6 +93,11 @@ const markPaidHandler = async (req, res) => {
       return res.status(403).json({ error: "Forbidden: Not an active member of this group" });
     }
 
+    // Authorization rule: Only the member who owes the money (fromId) can mark it as paid
+    if (userId !== fromId) {
+      return res.status(403).json({ error: "Forbidden: Only the member who owes this payment can mark it as paid" });
+    }
+
     // Insert into settlements table
     const { data: settlement, error } = await supabase
       .from("settlements")

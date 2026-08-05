@@ -13,6 +13,7 @@ export function SettleUpView({
   profiles,
   expenses,
   paidSettlements,
+  currentUserId,
   onMarkPaid,
 }: {
   group: { id: string; name: string };
@@ -20,6 +21,7 @@ export function SettleUpView({
   profiles: Map<string, Profile>;
   expenses: Expense[];
   paidSettlements: Settlement[];
+  currentUserId: string;
   onMarkPaid: (s: Settlement) => void;
 }) {
   const activeMemberIds = members
@@ -27,8 +29,8 @@ export function SettleUpView({
     .map((m) => m.profile_id!);
 
   const balances = useMemo(
-    () => computeBalances(expenses, activeMemberIds),
-    [expenses, activeMemberIds]
+    () => computeBalances(expenses, activeMemberIds, paidSettlements),
+    [expenses, activeMemberIds, paidSettlements]
   );
   const freshSettlements = useMemo(
     () => settleDebts(balances),
@@ -155,12 +157,18 @@ export function SettleUpView({
                   </div>
                 </div>
                 <Avatar name={nameOf(s.to)} id={s.to} size="md" />
-                <button
-                  className="btn-soft ml-1 px-3 py-2 text-sm"
-                  onClick={() => onMarkPaid(s)}
-                >
-                  Mark as Paid
-                </button>
+                {currentUserId === s.from ? (
+                  <button
+                    className="btn-primary ml-1 px-3.5 py-2 text-sm font-bold shadow-sm"
+                    onClick={() => onMarkPaid(s)}
+                  >
+                    Mark as Paid
+                  </button>
+                ) : (
+                  <span className="ml-1 rounded-lg bg-surface-subtle px-3 py-1.5 text-xs font-bold text-ink-500 ring-1 ring-ink-200/60">
+                    {currentUserId === s.to ? "Awaiting payment" : "Pending"}
+                  </span>
+                )}
               </div>
             ))}
           </div>

@@ -7,17 +7,20 @@ import { TopNav } from "./components/TopNav";
 import { ExpenseFeed } from "./components/ExpenseFeed";
 import { SettleUpView } from "./components/SettleUpView";
 import { RemindersPanel } from "./components/RemindersPanel";
-import { ToastProvider } from "./components/Toast";
+import { ToastProvider, useToast } from "./components/Toast";
 import { supabase } from "./supabase";
 import {
   fetchExpenses,
   fetchExpenseHistory,
   fetchGroupMembers,
   fetchGroupProfiles,
+  fetchPaidSettlements,
+  markSettlementPaidOnBackend,
   updateExpenseStatus,
 } from "./data";
 
 function AppInner() {
+  const { push } = useToast();
   const { session, profile, loading } = useAuth();
   const [currentGroup, setCurrentGroup] = useState<Group | null>(null);
   const [members, setMembers] = useState<GroupMember[]>([]);
@@ -30,11 +33,13 @@ function AppInner() {
   const loadGroupData = useCallback(async (group: Group, isInitialLoad = false) => {
     if (isInitialLoad) setGroupLoading(true);
     try {
-      const [membs, exps] = await Promise.all([
+      const [membs, exps, paidStls] = await Promise.all([
         fetchGroupMembers(group.id),
         fetchExpenses(group.id),
+        fetchPaidSettlements(group.id),
       ]);
       setMembers(membs);
+      setPaid(paidStls);
 
       // Fetch profiles for all active member profile_ids
       const profileIds = membs
@@ -65,7 +70,7 @@ function AppInner() {
     if (!currentGroup) return;
     loadGroupData(currentGroup, true);
 
-    // Subscribe to Realtime WebSocket updates for expenses and group_members
+    // Subscribe to Realtime WebSocket updates for expenses, group_members, and settlements
     const channel = supabase
       .channel(`group-realtime-${currentGroup.id}`)
       .on(
@@ -86,6 +91,18 @@ function AppInner() {
           event: "*",
           schema: "public",
           table: "group_members",
+          filter: `group_id=eq.${currentGroup.id}`,
+        },
+        () => {
+          loadGroupData(currentGroup, false);
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "settlements",
           filter: `group_id=eq.${currentGroup.id}`,
         },
         () => {
@@ -189,11 +206,20 @@ function AppInner() {
                 profiles={profiles}
                 expenses={expenses}
                 paidSettlements={paid}
-                onMarkPaid={(s) => {
-                  setPaid((prev) => [
-                    ...prev,
-                    { ...s, status: "paid", paidAt: Date.now() },
-                  ]);
+                currentUserId={profile.id}
+                onMarkPaid={async (s) => {
+                  try {
+                    setPaid((prev) => [
+                      ...prev,
+                      { ...s, status: "paid", paidAt: Date.now() },
+                    ]);
+                    await markSettlementPaidOnBackend(currentGroup.id, s.from, s.to, s.amount);
+                    push("Payment marked as paid!", "success");
+                    await loadGroupData(currentGroup, false);
+                  } catch (e: any) {
+                    push(e.message || "Failed to mark payment as paid", "warn");
+                    await loadGroupData(currentGroup, false);
+                  }
                 }}
               />
             )}
