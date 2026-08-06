@@ -3,6 +3,9 @@ on:
   push:
     branches: [main]
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_NODE_TYPE: node24
+
 jobs:
   build-push-deploy:
     runs-on: ubuntu-latest
