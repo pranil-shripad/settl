@@ -5,7 +5,7 @@
 /* ---- Theme tokens ---- */
 :root,
 [data-theme="light"] {
-  --bg: #faf6f2;
+  --bg: #2558EF;
   --surface: 255 255 255;
   --surface-2: 244 239 233;
   --overlay: 28 22 20;
