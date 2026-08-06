@@ -1,0 +1,49 @@
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: settl-pipeline
+  namespace: pranil-shripad-dev
+spec:
+  params:
+    - name: GIT_REPO
+      type: string
+      default: "https://github.com/pranil-shripad/settl.git"
+    - name: GIT_REVISION
+      type: string
+      default: "main"
+  tasks:
+    - name: fetch-repository
+      taskSpec:
+        params:
+          - name: url
+            type: string
+          - name: revision
+            type: string
+        steps:
+          - name: clone
+            image: alpine/git:latest
+            script: |
+              echo "Cloning repository $(params.url) branch $(params.revision)"
+      params:
+        - name: url
+          value: $(params.GIT_REPO)
+        - name: revision
+          value: $(params.GIT_REVISION)
+    - name: build-and-deploy
+      runAfter:
+        - fetch-repository
+      taskSpec:
+        steps:
+          - name: deploy
+            image: image-registry.openshift-image-registry.svc:5000/openshift/cli:latest
+            script: |
+              echo "Triggering OpenShift deployment rollout"
+---
+apiVersion: tekton.dev/v1beta1
+kind: PipelineRun
+metadata:
+  name: settl-pipeline-run-1
+  namespace: pranil-shripad-dev
+spec:
+  pipelineRef:
+    name: settl-pipeline
