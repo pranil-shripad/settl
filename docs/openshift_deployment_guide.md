@@ -158,3 +158,21 @@ curl -s https://settl-backend-route-pranil-shripad-dev.apps.rm3.7wse.p1.openshif
 oc create job settl-reminder-manual --from=cronjob/settl-reminder-job -n pranil-shripad-dev
 oc logs job/settl-reminder-manual -n pranil-shripad-dev
 ```
+
+---
+
+## 6. Automated CI/CD Pipeline
+
+Yes! A complete CI/CD (Continuous Integration & Continuous Deployment) pipeline is implemented for this project:
+
+1. **GitHub Actions Pipeline (`.github/workflows/deploy.yml`)**:
+   - Triggers automatically whenever changes are pushed to the `main` branch.
+   - Logs into Quay container registry.
+   - Builds fresh frontend and backend Docker images tagged with the commit SHA (`github.sha`).
+   - Pushes images to Quay.io.
+   - Authenticates to OpenShift via `oc login` and updates the deployments (`oc set image deployment/...`) for zero-downtime rollouts.
+
+2. **OpenShift Native BuildConfig Pipeline**:
+   - The OpenShift `BuildConfig` object (`settl-frontend`) tracks the GitHub repository.
+   - Triggers container image creation inside OpenShift's internal registry automatically when triggered via webhooks or `oc start-build bc/settl-frontend`.
+
