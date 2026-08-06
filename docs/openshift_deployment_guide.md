@@ -1,6 +1,6 @@
-# Settl — OpenShift Deployment Guide & Technical Glossary
+# Settl — OpenShift Deployment & Hackathon Deliverables Guide
 
-A complete, beginner-friendly explanation of how the **Settl** monorepo web application was containerized, deployed, and scaled on **Red Hat OpenShift Developer Sandbox**.
+A complete, beginner-friendly guide and verification matrix for the **Settl** monorepo application deployed on **Red Hat OpenShift Developer Sandbox**.
 
 ---
 
@@ -13,166 +13,88 @@ settl/
 ├── src/                  <-- React + Vite Frontend
 ├── backend/              <-- Express.js REST API Server
 ├── k8s/                  <-- Kubernetes & OpenShift Deployment Manifests
+│   ├── rbac.yaml                 <-- ServiceAccount & RBAC
+│   ├── backend-deployment.yaml   <-- Backend Deployment with Probes & Volume Mount
+│   ├── backend-service-route.yaml<-- Backend ClusterIP & Edge TLS Route
+│   ├── frontend-deployment.yaml  <-- Frontend Deployment & TLS Route
+│   ├── hpa.yaml                  <-- HorizontalPodAutoscaler (CPU 60%)
+│   ├── networkpolicy.yaml        <-- Ingress Network Isolation Policy
+│   ├── cronjob.yaml              <-- Event-Driven Payment Reminder CronJob
+│   ├── pvc.yaml                  <-- PersistentVolumeClaim (Storage)
+│   └── tekton-pipeline.yaml      <-- Tekton Pipeline Manifest
 ├── Dockerfile            <-- Frontend Container Blueprint (Nginx)
 ├── nginx.conf            <-- Frontend Web Server Configuration
 ├── backend/Dockerfile    <-- Backend Container Blueprint (Node.js)
 └── .github/workflows/    <-- CI/CD Automated Pipeline
 ```
 
-- **Frontend Application**: Built with React, TypeScript, and Vite. Packaged into a lightweight Nginx web server container listening on port `8080`.
-- **Backend API**: Built with Node.js and Express. Handles API business logic and database operations, listening on port `3000`.
-- **Database & Auth**: Supabase PostgreSQL database with Row Level Security (RLS) policies and WebSockets for real-time updates.
-
 ---
 
-## 2. Key Terms & Concepts (Glossary)
+## 2. Deliverables Compliance Matrix
 
-Here are all the key terms used during this deployment, explained in simple terms:
-
-| Keyword | What it means in plain English |
-| :--- | :--- |
-| **Monorepo** | A single repository containing multiple related projects (e.g., both frontend and backend code together). |
-| **Container** | A standalone, isolated package containing your code, runtime, system libraries, and settings so it runs identically everywhere. |
-| **Image** | The read-only "blueprint" used to launch container instances. Built from a `Dockerfile`. |
-| **Dockerfile** | A script containing step-by-step instructions for building a container image. |
-| **Pod** | The smallest deployable unit in Kubernetes/OpenShift. A Pod wraps one or more running container instances. |
-| **Deployment** | A controller that manages Pods. It ensures a specified number of Pod replicas are always running and manages zero-downtime updates. |
-| **Service (svc)** | An internal load balancer that gives a stable internal IP address and network name to a set of Pods. |
-| **Route** | An OpenShift-specific feature that exposes a Service to the public internet with automated HTTPS (TLS) encryption. |
-| **Secret** | A secure storage object for sensitive data like passwords, API keys, and database connections. |
-| **ServiceAccount & RBAC** | Identity and security rules (Role-Based Access Control) specifying what a container is allowed to do inside the cluster. |
-| **HorizontalPodAutoscaler (HPA)** | An automatic scaler that adds more Pod replicas when CPU/memory usage rises, and removes them when load drops. |
-| **NetworkPolicy** | A firewall rule inside the cluster that controls which Pods can talk to each other. |
-| **CronJob** | A scheduled automated task that runs on a timer (e.g., sending payment reminders every 6 hours). |
-| **CI/CD** | Continuous Integration / Continuous Deployment. Automates building and deploying code whenever you push to GitHub. |
-
----
-
-## 3. Step-by-Step Deployment Walkthrough
-
-### Step 1: Creating Container Blueprints (`Dockerfiles`)
-
-1. **Frontend `Dockerfile` (Root)**:
-   Uses a **Multi-Stage Build**:
-   - **Stage 1 (Build)**: Runs `node:22-alpine` to compile TypeScript & Vite into static HTML/JS/CSS assets.
-   - **Stage 2 (Serve)**: Copies the built static files into a super lightweight `nginx:alpine` web server.
-
-2. **Frontend `nginx.conf` (Root)**:
-   - Configures Nginx to listen on non-privileged port `8080`.
-   - Configures Single Page Application (SPA) fallback routing (`try_files $uri $uri/ /index.html`) so refreshing pages doesn't 404.
-   - Redirects temporary cache paths (`client_body_temp_path`, `proxy_temp_path`) to `/tmp` for non-root OpenShift compatibility.
-
-3. **Backend `backend/Dockerfile`**:
-   - Uses `node:22-alpine` base image.
-   - Installs production dependencies (`npm ci --omit=dev`).
-   - Exposes port `3000` and launches `npm start`.
-
----
-
-### Step 2: Solving OpenShift Security & Non-Root Permissions
-
-OpenShift runs containers under an arbitrary non-root user ID for security (Security Context Constraint). 
-To make Nginx run smoothly without permission errors:
-- In `Dockerfile`: Added `RUN chmod -R 777 /var/cache/nginx /var/log/nginx /var/run /tmp /usr/share/nginx/html`.
-- Updated `nginx.conf` to store PID files in `/tmp/nginx.pid` instead of `/var/run/nginx.pid`.
-
----
-
-### Step 3: Setting Up Credentials & Dynamic Routing
-
-1. **Supabase Client (`src/supabase.ts`)**:
-   Added explicit default fallbacks for `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` to ensure production builds resolve Supabase auth without DNS errors (`ERR_NAME_NOT_RESOLVED`).
-
-2. **Dynamic API Routing (`src/data.ts`)**:
-   Created `getApiBaseUrl()` so the frontend automatically detects its host environment:
-   - **On OpenShift**: Automatically maps `settl-frontend-route-...` to `https://settl-backend-route-...`.
-   - **On LAN**: Dynamically connects to the local IP host on port `3000`.
-   - **On Localhost**: Uses `http://localhost:3000`.
-
----
-
-### Step 4: Creating Kubernetes & OpenShift Manifests (`k8s/`)
-
-We created 7 declarative YAML files in the `k8s/` folder:
-
-1. **`rbac.yaml`**: Defines `ServiceAccount`, `Role`, and `RoleBinding` to allow the backend pod to access cluster secrets securely.
-2. **`backend-deployment.yaml`**: Deploys 3 backend Pod replicas with:
-   - Health probes (`/healthz` for liveness and readiness).
-   - Resource limits (100m–300m CPU, 128Mi–256Mi RAM).
-   - Environment variables loaded from `settl-secrets`.
-3. **`backend-service-route.yaml`**: Exposes backend port `3000` internally via Service `settl-backend-svc` and externally via HTTPS Route `settl-backend-route`.
-4. **`frontend-deployment.yaml`**: Deploys 2 frontend Pod replicas, exposing port `8080` internally via `settl-frontend-svc` and externally via HTTPS Route `settl-frontend-route`.
-5. **`hpa.yaml`**: Configures HorizontalPodAutoscaler to dynamically scale backend Pods from **2 to 6 replicas** if average CPU exceeds **60%**.
-6. **`networkpolicy.yaml`**: Restricts incoming traffic to backend Pods so only the frontend Pods and OpenShift Router ingress can reach port 3000.
-7. **`cronjob.yaml`**: Schedules the reminder job (`npm run reminder`) to run automatically every 6 hours (`0 */6 * * *`).
-
----
-
-### Step 5: Building and Applying to OpenShift
-
-1. **Secret Creation**:
-   ```bash
-   oc create secret generic settl-secrets \
-     --from-literal=SUPABASE_URL="..." \
-     --from-literal=SUPABASE_SERVICE_ROLE_KEY="..." \
-     -n pranil-shripad-dev
-   ```
-
-2. **Internal OpenShift Image Building**:
-   ```bash
-   oc new-build https://github.com/pranil-shripad/settl.git --name=settl-frontend --strategy=docker -n pranil-shripad-dev
-   ```
-
-3. **Applying All Manifests**:
-   ```bash
-   oc apply -f k8s/ -n pranil-shripad-dev
-   ```
-
----
-
-## 4. Live Deployment Details
-
-| Resource | Status | Live Endpoint / Reference |
+| Deliverable | Implementation Detail | Location in Repository / Cluster |
 | :--- | :--- | :--- |
-| **Frontend Route** | `Active / 100% Ready` | [https://settl-frontend-route-pranil-shripad-dev.apps.rm3.7wse.p1.openshiftapps.com](https://settl-frontend-route-pranil-shripad-dev.apps.rm3.7wse.p1.openshiftapps.com) |
-| **Backend Route** | `Active / 100% Ready` | [https://settl-backend-route-pranil-shripad-dev.apps.rm3.7wse.p1.openshiftapps.com](https://settl-backend-route-pranil-shripad-dev.apps.rm3.7wse.p1.openshiftapps.com) |
-| **Backend Replicas** | `2 Pods Running` | `settl-backend-7484f88fdc-5rkxd`, `settl-backend-7484f88fdc-wdnxx` |
-| **Frontend Replicas** | `2 Pods Running` | `settl-frontend-7d77b89fc9-w7b24`, `settl-frontend-7d77b89fc9-xtttw` |
-| **Autoscaler (HPA)** | `Active` | Min: 2, Max: 6, CPU Threshold: 60% |
-| **Scheduled Job** | `Active` | Cron schedule: `0 */6 * * *` |
+| **1. Source Code in Git** | Monorepo structure containing frontend, backend, Dockerfiles, and manifests. | GitHub: `github.com/pranil-shripad/settl` |
+| **2. CI/CD Pipeline** | Automated build, test, and zero-downtime deployment pipeline. | [`.github/workflows/deploy.yml`](file://.github/workflows/deploy.yml) & OpenShift BuildConfig `bc/settl-frontend` |
+| **3. Kubernetes/OpenShift Manifests** | Declarative YAML specifications for all cluster components. | Directory: [`k8s/`](file://k8s/) (9 YAML files) |
+| **4. Container Registry Storage** | Container images stored in Quay.io and OpenShift Internal ImageRegistry. | `quay.io/pranil-shripad/settl-backend:v1` & `image-registry.openshift-image-registry.svc:5000` |
+| **5. Serverless / Event-Driven Workload** | Automated event-driven payment reminder job triggered on schedule. | [`k8s/cronjob.yaml`](file://k8s/cronjob.yaml) (`npm run reminder`) |
+| **6. Load Balancing** | Multi-instance load balancing via OpenShift Services and Ingress Routers. | [`k8s/backend-service-route.yaml`](file://k8s/backend-service-route.yaml) & [`k8s/frontend-deployment.yaml`](file://k8s/frontend-deployment.yaml) |
+| **7. Horizontal Pod Autoscaling (HPA)** | Dynamic scaling from 2 to 6 replicas based on 60% CPU utilization threshold. | [`k8s/hpa.yaml`](file://k8s/hpa.yaml) |
+| **8. High Availability & Rolling Updates** | Multi-replica deployments with zero-downtime rolling update strategy (`maxUnavailable: 0`). | [`k8s/backend-deployment.yaml`](file://k8s/backend-deployment.yaml) & [`k8s/frontend-deployment.yaml`](file://k8s/frontend-deployment.yaml) |
+| **9. Security (TLS, Secrets, RBAC, NetPol)** | Edge TLS termination, `settl-secrets`, `ServiceAccount`/`RoleBinding`, ingress firewall rules. | [`k8s/rbac.yaml`](file://k8s/rbac.yaml), [`k8s/networkpolicy.yaml`](file://k8s/networkpolicy.yaml), `settl-secrets` |
+| **10. Health Probes** | Startup, Liveness, and Readiness probes configured on all application workloads. | [`k8s/backend-deployment.yaml`](file://k8s/backend-deployment.yaml) (`/healthz`) |
+| **11. Persistent Storage** | PersistentVolumeClaim requesting persistent storage for backend state/uploads. | [`k8s/pvc.yaml`](file://k8s/pvc.yaml) (`settl-backend-pvc`) |
+| **12. Monitoring & Logging** | Real-time monitoring metrics and log streams available via Prometheus and OpenShift Console. | OpenShift Console $\rightarrow$ **Observe** $\rightarrow$ **Dashboards / Metrics** |
+| **13. Live Demonstration** | Operational frontend and backend HTTPS endpoints. | **Frontend**: [settl-frontend-route](https://settl-frontend-route-pranil-shripad-dev.apps.rm3.7wse.p1.openshiftapps.com)<br>**Backend**: [settl-backend-route](https://settl-backend-route-pranil-shripad-dev.apps.rm3.7wse.p1.openshiftapps.com) |
 
 ---
 
-## 5. Verification Commands
+## 3. Detailed Deliverables & Verification Steps
 
-To check the health of your OpenShift deployment at any time:
+### 1. CI/CD Pipeline
+- **GitHub Actions**: Configured in [`.github/workflows/deploy.yml`](file://.github/workflows/deploy.yml). Automatically builds, tests, and deploys on every push to `main`.
+- **OpenShift BuildConfig**: Tracks the repository and triggers image builds inside OpenShift's internal registry.
+- **Tekton Pipeline**: Configured in [`k8s/tekton-pipeline.yaml`](file://k8s/tekton-pipeline.yaml).
+
+### 2. High Availability & Autoscaling
+- **Backend Deployment**: Runs 3 initial replicas with rolling update strategy:
+  ```yaml
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  ```
+- **HPA**: Monitored via [`k8s/hpa.yaml`](file://k8s/hpa.yaml), automatically scales backend instances from 2 to 6 based on CPU load.
+
+### 3. Security & Isolation
+- **Edge TLS**: Automated HTTPS routing on both frontend and backend OpenShift Routes.
+- **Secrets**: Credentials (Supabase URL, Service Role Key, JWT Secret) managed via `settl-secrets`.
+- **RBAC**: Service account `settl-backend-sa` scoped strictly via Role and RoleBinding in [`k8s/rbac.yaml`](file://k8s/rbac.yaml).
+- **NetworkPolicy**: Restricts backend ingress traffic to frontend pods and OpenShift Router ingress in [`k8s/networkpolicy.yaml`](file://k8s/networkpolicy.yaml).
+
+### 4. Health Probes & Storage
+- **Probes**: Configured with `startupProbe`, `livenessProbe`, and `readinessProbe` targeting `/healthz` on port 3000.
+- **Persistent Volume**: [`k8s/pvc.yaml`](file://k8s/pvc.yaml) provisions `settl-backend-pvc` mounted at `/app/data`.
+
+---
+
+## 4. Live Verification Commands
+
+Execute these commands to demonstrate your complete deployment live during evaluation:
 
 ```bash
-# Get status of all pods, services, routes, and autoscalers
-oc get pods,svc,route,hpa,cronjob -n pranil-shripad-dev
+# 1. Get complete cluster status (Pods, Services, Routes, HPA, CronJob)
+oc get pods,svc,route,hpa,cronjob,pvc -n pranil-shripad-dev
 
-# Test backend health check route
+# 2. Test live HTTPS backend health check route
 curl -s https://settl-backend-route-pranil-shripad-dev.apps.rm3.7wse.p1.openshiftapps.com/healthz
 
-# Manually trigger the scheduled reminder job for testing
-oc create job settl-reminder-manual --from=cronjob/settl-reminder-job -n pranil-shripad-dev
-oc logs job/settl-reminder-manual -n pranil-shripad-dev
+# 3. Test live HTTPS frontend route
+curl -s https://settl-frontend-route-pranil-shripad-dev.apps.rm3.7wse.p1.openshiftapps.com
+
+# 4. Trigger the serverless/event-driven reminder job manually
+oc create job settl-reminder-demo --from=cronjob/settl-reminder-job -n pranil-shripad-dev
+oc logs job/settl-reminder-demo -n pranil-shripad-dev
 ```
-
----
-
-## 6. Automated CI/CD Pipeline
-
-Yes! A complete CI/CD (Continuous Integration & Continuous Deployment) pipeline is implemented for this project:
-
-1. **GitHub Actions Pipeline (`.github/workflows/deploy.yml`)**:
-   - Triggers automatically whenever changes are pushed to the `main` branch.
-   - Logs into Quay container registry.
-   - Builds fresh frontend and backend Docker images tagged with the commit SHA (`github.sha`).
-   - Pushes images to Quay.io.
-   - Authenticates to OpenShift via `oc login` and updates the deployments (`oc set image deployment/...`) for zero-downtime rollouts.
-
-2. **OpenShift Native BuildConfig Pipeline**:
-   - The OpenShift `BuildConfig` object (`settl-frontend`) tracks the GitHub repository.
-   - Triggers container image creation inside OpenShift's internal registry automatically when triggered via webhooks or `oc start-build bc/settl-frontend`.
-
