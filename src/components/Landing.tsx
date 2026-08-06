@@ -79,7 +79,7 @@ export function Landing({
         <main className="flex-1 py-8">
           <div className="mb-6">
             <h1 className="text-3xl font-extrabold tracking-tight text-ink-900">
-              Your groups
+              Pranil Changed this from Your groups
             </h1>
             <p className="mt-1 text-ink-500">
               Create a new event or jump back into an existing one.
@@ -298,11 +298,10 @@ function GroupRow({
         <h3 className="truncate font-bold text-ink-900">{group.name}</h3>
         <p className="text-xs text-ink-500">
           {memberCount !== null
-            ? `${activeMembers.length} active${
-                members.length - activeMembers.length > 0
-                  ? ` · ${members.length - activeMembers.length} invited`
-                  : ""
-              }`
+            ? `${activeMembers.length} active${members.length - activeMembers.length > 0
+              ? ` · ${members.length - activeMembers.length} invited`
+              : ""
+            }`
             : "Loading…"}
         </p>
       </div>
