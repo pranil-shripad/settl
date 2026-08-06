@@ -2,35 +2,68 @@ name: Build and Deploy Settl
 on:
   push:
     branches: [main]
+
 jobs:
   build-push-deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-      - name: Log in to Quay
-        run: echo "${{ secrets.QUAY_PASSWORD }}" | docker login quay.io -u "${{ secrets.QUAY_USERNAME }}" --password-stdin
+      - name: Check GitHub Secrets Configured
+        id: check_secrets
+        run: |
+          HAS_OPENSHIFT="false"
+          HAS_QUAY="false"
+          if [ -n "${{ secrets.OC_TOKEN }}" ] && [ -n "${{ secrets.OC_SERVER }}" ]; then
+            HAS_OPENSHIFT="true"
+          fi
+          if [ -n "${{ secrets.QUAY_USERNAME }}" ] && [ -n "${{ secrets.QUAY_PASSWORD }}" ]; then
+            HAS_QUAY="true"
+          fi
+          echo "has_openshift=$HAS_OPENSHIFT" >> $GITHUB_OUTPUT
+          echo "has_quay=$HAS_QUAY" >> $GITHUB_OUTPUT
+          if [ "$HAS_OPENSHIFT" = "false" ] && [ "$HAS_QUAY" = "false" ]; then
+            echo "::notice ::GitHub Secrets (OC_TOKEN, OC_SERVER, QUAY_USERNAME, QUAY_PASSWORD) are not configured yet. Add them in GitHub Repo Settings -> Secrets -> Actions to enable auto-deployment."
+          fi
 
-      - name: Build and push frontend image
+      - name: Log in to Quay (If Quay Secrets Exist)
+        if: steps.check_secrets.outputs.has_quay == 'true'
+        run: |
+          echo "${{ secrets.QUAY_PASSWORD }}" | docker login quay.io -u "${{ secrets.QUAY_USERNAME }}" --password-stdin
+
+      - name: Build and push frontend image to Quay
+        if: steps.check_secrets.outputs.has_quay == 'true'
         run: |
           docker build -t quay.io/${{ secrets.QUAY_USERNAME }}/settl-frontend:${{ github.sha }} -f Dockerfile .
           docker push quay.io/${{ secrets.QUAY_USERNAME }}/settl-frontend:${{ github.sha }}
 
-      - name: Build and push backend image
+      - name: Build and push backend image to Quay
+        if: steps.check_secrets.outputs.has_quay == 'true'
         run: |
           docker build -t quay.io/${{ secrets.QUAY_USERNAME }}/settl-backend:${{ github.sha }} -f backend/Dockerfile backend
           docker push quay.io/${{ secrets.QUAY_USERNAME }}/settl-backend:${{ github.sha }}
 
       - name: Install oc CLI
+        if: steps.check_secrets.outputs.has_openshift == 'true'
         run: |
           curl -LO https://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable/openshift-client-linux.tar.gz
           tar -xzf openshift-client-linux.tar.gz
           sudo mv oc /usr/local/bin/
 
-      - name: Deploy both services to OpenShift
+      - name: Deploy to OpenShift
+        if: steps.check_secrets.outputs.has_openshift == 'true'
         run: |
           oc login --token=${{ secrets.OC_TOKEN }} --server=${{ secrets.OC_SERVER }}
-          oc set image deployment/settl-frontend frontend=quay.io/${{ secrets.QUAY_USERNAME }}/settl-frontend:${{ github.sha }} -n pranil-shripad-dev
-          oc set image deployment/settl-backend backend=quay.io/${{ secrets.QUAY_USERNAME }}/settl-backend:${{ github.sha }} -n pranil-shripad-dev
-          oc rollout status deployment/settl-frontend -n pranil-shripad-dev
+          
+          # Trigger OpenShift BuildConfig for frontend
+          oc start-build bc/settl-frontend -n pranil-shripad-dev --follow || true
+          
+          # Perform backend rolling update
+          if [ "${{ steps.check_secrets.outputs.has_quay }}" = "true" ]; then
+            oc set image deployment/settl-backend backend=quay.io/${{ secrets.QUAY_USERNAME }}/settl-backend:${{ github.sha }} -n pranil-shripad-dev
+          else
+            oc rollout restart deployment/settl-backend -n pranil-shripad-dev
+          fi
+          
           oc rollout status deployment/settl-backend -n pranil-shripad-dev
