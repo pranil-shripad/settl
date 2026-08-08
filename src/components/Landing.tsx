@@ -79,7 +79,7 @@ export function Landing({
         <main className="flex-1 py-8">
           <div className="mb-6">
             <h1 className="text-3xl font-extrabold tracking-tight text-ink-900">
-              Pranil Changed this from Your groups
+              Your groups
             </h1>
             <p className="mt-1 text-ink-500">
               Create a new event or jump back into an existing one.
